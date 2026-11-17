@@ -11,7 +11,8 @@
     "dev": "node --watch src/server.js",
     "verify:sprint1": "node scripts/verificar_sprint1.js",
     "verify:sprint2": "node scripts/verificar_sprint2.js",
-    "test": "node scripts/verificar_sprint1.js && node scripts/verificar_sprint2.js"
+    "verify:sprint3": "node scripts/verificar_sprint3.js",
+    "test": "node scripts/verificar_sprint1.js && node scripts/verificar_sprint2.js && node scripts/verificar_sprint3.js"
   },
   "keywords": [],
   "author": "",

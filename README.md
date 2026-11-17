@@ -2,7 +2,7 @@
 
 Aplicación en desarrollo para apoyar la operación cotidiana de pequeñas tiendas de abarrotes, misceláneas y cremerías en México. El proyecto prioriza cobrar rápido en mostrador (por pieza, por peso o por importe en pesos), llevar control de fiados e inventario por libro mayor, aislar estrictamente los datos de cada tienda y operar **sin conexión a internet (*Offline-First*)**.
 
-> **Estado actual:** Sprints 0, 1 y 2 completados y verificados en desarrollo; listo para iniciar **Sprint 3 (Catálogo, botones rápidos, historial de precios y reglas bidireccionales de granel)**. Consulta el detalle arquitectónico y el tablero en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md).
+> **Estado actual:** Sprints 0, 1, 2 y 3 completados y verificados en desarrollo; listo para iniciar **Sprint 4 (Inventario como libro mayor `inventario_movimientos` y compras básicas)**. Consulta el detalle arquitectónico y el tablero en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md).
 
 ## Objetivo
 
@@ -26,13 +26,19 @@ Construir un sistema punto de venta móvil sencillo e intuitivo que permita a un
   - `GET /api/tiendas/:tiendaId/miembros` — lista miembros con correo (`propietario` y `encargado`).
   - `POST /api/tiendas/:tiendaId/miembros` — vincula un miembro por correo respetando jerarquía (`propietario` o `encargado` para `cajero`).
   - `PATCH /api/tiendas/:tiendaId/miembros/:miembroId` — cambia rol (`propietario`) o suspende/reactiva membresías sin permitir dejar una tienda sin propietario activo.
-  - `GET /api/productos` y `POST /api/productos` (con `X-Tienda-Id: <uuid>` o bajo `/api/tiendas/:tiendaId/productos`) — catálogo aislado por tienda.
-  - `PATCH /api/productos/:productoId` (o `/api/tiendas/:tiendaId/productos/:productoId`) — actualización parcial y cambio de precio protegido por rol (`propietario` y `encargado`; bloqueado para `cajero`).
-- **Documentación de permisos y sesiones:** [docs/MATRIZ_PERMISOS_Y_SESION.md](docs/MATRIZ_PERMISOS_Y_SESION.md).
+  - `GET /api/productos` y `POST /api/productos` (con `X-Tienda-Id: <uuid>` o bajo `/api/tiendas/:tiendaId/productos`) — catálogo aislado por tienda con búsqueda sin tildes (`?q=`), botonera rápida (`?acceso_rapido=true`), control opcional de inventario y paginación gradual (`limite`/`offset`).
+  - `GET /api/productos/por-codigo/:codigo` — búsqueda exacta instantánea por código de barras dentro de la tienda activa.
+  - `GET /api/productos/:productoId` y `PATCH /api/productos/:productoId` — consulta individual, baja lógica (`activo`), configuración de acceso rápido y cambio de precio protegido por rol (`propietario` y `encargado`).
+  - `GET /api/productos/:productoId/historial-precios` — consulta del historial inmutable de cambios de precio (`propietario` y `encargado`).
+  - `POST /api/productos/:productoId/cotizar` — cotización exacta por peso/cantidad (`cantidad`) o por dinero (*"deme \$15 de jamón"*, `importe_centavos`) sin errores de punto flotante.
+- **Documentación técnica y por Sprint:**
+  - [docs/MATRIZ_PERMISOS_Y_SESION.md](docs/MATRIZ_PERMISOS_Y_SESION.md) y [docs/CONTRATO_CATALOGO_Y_GRANEL.md](docs/CONTRATO_CATALOGO_Y_GRANEL.md).
+  - Bitácora detallada por sprint en [`implementation/`](implementation/): Sprints `00`, `01`, `02` y `03`.
 - **Migraciones versionadas (`migrations/`):**
   - `000_diagnostico_y_respaldo_sprint0.sql` — respaldo previo en `private_backups.productos_pre_sprint1`.
   - `001_tiendas_y_membresias.sql` (+ `001_rollback_...`) — `tiendas`, `miembros_tienda`, migración a `Tienda-Demo` y RLS base.
   - `002_identidad_permisos_y_membresias.sql` (+ `002_rollback_...`) — RPCs de gestión jerárquica de miembros, blindaje de columnas de licencia en `tiendas` y soporte de Grace Period offline.
+  - `003_catalogo_precios_y_granel.sql` (+ `003_rollback_...`) — normalización UTF-8 `plegar_acentos`, acceso rápido, `controla_inventario` y auditoría inmutable `producto_precios_historial` por trigger.
 
 ## Tecnologías y versiones
 
@@ -115,8 +121,8 @@ El proyecto aplica seis principios desde la base de datos y el backend para evit
 | **Sprint 0** | Proteger API existente, configurar Git, `.env.example`, respaldo SQL y arquitectura base. | Completado |
 | **Sprint 1** | Crear `tiendas` y `miembros_tienda`, migrar `productos` a `tienda_id` con UUID y aplicar RLS. | Completado |
 | **Sprint 2** | Identidad, sesiones, matriz de permisos por rol y base de constancia firmada offline. | Completado |
-| **Sprint 3** | Catálogo por tienda (con y sin código, botones rápidos) y reglas bidireccionales de granel. | **Siguiente** |
-| **Sprint 4** | Inventario como libro mayor (`inventario_movimientos` por deltas) y compras básicas. | Pendiente |
+| **Sprint 3** | Catálogo por tienda (con y sin código, botones rápidos) y reglas bidireccionales de granel. | Completado |
+| **Sprint 4** | Inventario como libro mayor (`inventario_movimientos` por deltas) y compras básicas. | **Siguiente** |
 | **Sprint 5** | **Base móvil Flutter Offline-First:** SQLite local, cola `sync_queue` (Outbox) y vigencia offline. | Pendiente |
 | **Sprint 6** | Ventas en efectivo, granel inverso y caja (SQLite + RPC atómica e idempotente). | Pendiente |
 | **Sprint 7** | Fiados, abonos (`fiado_abonos`), salidas de caja y modo lectura garantizado al vencer plan. | Pendiente |

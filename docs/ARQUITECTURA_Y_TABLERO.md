@@ -51,8 +51,8 @@ Documento vivo de referencia técnica y seguimiento del **POS SaaS para Miscelá
 | **Sprint 0** | Preparación, Git y respaldo base | **Terminado** | Repo limpio sin secretos, `.env.example`, guía de respaldo SQL y arquitectura base. |
 | **Sprint 1** | Tiendas, membresías y migración UUID | **Terminado** | Tablas `tiendas` y `miembros_tienda`, migración reversible de `productos` a `tienda_id`, RLS sin recursión y rutas de contexto de tienda. |
 | **Sprint 2** | Identidad, roles, permisos y base de firma offline | **Terminado** | Matriz `propietario`/`encargado`/`cajero`, renovación de sesión, RPCs de equipo y constancia firmada **Ed25519** de vigencia offline. |
-| **Sprint 3** | Catálogo, botones rápidos y reglas de granel | **Siguiente** | Productos con/sin código, botones rápidos, historial de precios, búsquedas UTF-8 y motor de cálculo peso <-> importe. |
-| **Sprint 4** | Inventario como libro mayor (`inventario_movimientos`) | Pendiente | Entradas de bulto/pieza, ajustes y mermas por deltas con UUID e idempotencia; `stock_actual` mantenido por trigger. |
+| **Sprint 3** | Catálogo, botones rápidos y reglas de granel | **Terminado** | Búsqueda UTF-8 `plegar_acentos`, botonera rápida, `producto_precios_historial` por trigger y motor `BigInt` peso <-> importe. |
+| **Sprint 4** | Inventario como libro mayor (`inventario_movimientos`) | **Siguiente** | Entradas de bulto/pieza, ajustes y mermas por deltas con UUID e idempotencia; `stock_actual` mantenido por trigger. |
 | **Sprint 5** | Base móvil Flutter Offline-First y `sync_queue` | Pendiente | App Flutter con SQLite local, patrón *Outbox* (`sync_queue`), descarga incremental de catálogo y verificación criptográfica offline. |
 | **Sprint 6** | Ventas en efectivo, granel inverso y caja (Offline-First) | Pendiente | Cobro en 2 toques en SQLite + RPC transaccional idempotente en PostgreSQL (venta + detalles + descuento inventario + caja). |
 | **Sprint 7** | Fiados, abonos y salidas de caja (Offline-First) | Pendiente | Libro mayor de deudas/abonos con UUID, pagos a proveedores/gastos y modo lectura garantizado ante vencimiento de plan. |
@@ -75,13 +75,16 @@ Documento vivo de referencia técnica y seguimiento del **POS SaaS para Miscelá
 - **[HU-04 / S2-01]** Ciclo de sesión (`login`, `registro`, `refresh`, `logout`) y emisión/verificación de constancia criptográfica offline **Ed25519** (Grace Period de 96 h + detección de reloj atrasado + modo lectura permanente de fiados/inventario).
 - **[HU-05 / S2-02]** Matriz de permisos en Express (`src/config/permisos.js`) + PostgreSQL (`GRANT UPDATE (nombre)` en `tiendas` y RPCs `listar_miembros_tienda`, `agregar_miembro_tienda`, `actualizar_miembro_tienda`).
 - **[HU-06 / S2-03]** Verificación multi-cuenta completa (`npm run verify:sprint2`): aislamiento entre tiendas, restricciones de `cajero` y `encargado`, y pérdida inmediata de acceso en Express + PostgREST RLS al suspender membresía.
+- **[HU-07 / S3-01]** Búsqueda rápida por nombre/código con plegado de acentos UTF-8 (`plegar_acentos`), paginación gradual, baja lógica (`activo`), `controla_inventario` y botonera de acceso rápido (`es_acceso_rapido`, `orden_acceso_rapido`).
+- **[HU-08 / S3-02]** Historial inmutable de cambios de precio (`producto_precios_historial`) alimentado por trigger `SECURITY DEFINER` y blindado en PostgREST.
+- **[HU-09 / S3-03]** Motor `BigInt` de venta a granel bidireccional (`src/utils/calculosGranel.js` + `POST /api/productos/:id/cotizar`) verificado con `npm run verify:sprint3`.
 
-### En preparación (Sprint 3 — Catálogo, botones rápidos, historial de precios y granel)
-- **[HU-07 / S3-01]** Búsqueda rápida por nombre/código con soporte UTF-8 completo, desactivación lógica (`activo`), flag de control opcional de inventario y flag/orden de **acceso rápido** (botones grandes en mostrador para pan, tortillas, huevo y cremería sin código).
-- **[HU-08 / S3-02]** Historial inmutable de cambios de precio (`producto_precios_historial`) mediante trigger automático en PostgreSQL para auditar quién y cuándo ajustó precios sin alterar ventas históricas.
-- **[HU-09 / S3-03]** Reglas precisas y utilería compartida de venta a granel bidireccional: cálculo Peso -> Importe ($250\text{ g} \times \$160 = \$40$) e Importe -> Peso (*"deme \$15 de jamón"* / redondeo en báscula) con `NUMERIC(12,3)` y centavos enteros.
+### En preparación (Sprint 4 — Inventario como libro mayor `inventario_movimientos` y compras básicas)
+- **[HU-10 / S4-01]** Tabla inmutable `inventario_movimientos` (deltas `NUMERIC(12,3)` con `UUID` e idempotencia por evento: `entrada_inicial`, `compra`, `ajuste`, `merma`, y reservado `venta` / `cancelacion_venta` para Sprint 6).
+- **[HU-11 / S4-02]** Campo calculado `stock_actual` y `stock_minimo` en `productos` mantenido automáticamente mediante trigger en PostgreSQL sumando los deltas (evitando sobrescrituras cuando varios dispositivos sincronizan desfasados).
+- **[HU-12 / S4-03]** RPC transaccional para registrar compras/entradas (incluyendo entrada de bulto/barra expresada en `kg`/`litro`/`pieza` con costo opcional de referencia), ajustes y mermas con motivo obligatorio y usuario responsable.
 
-### Pendiente (Sprints 4 a 9)
+### Pendiente (Sprints 5 a 9)
 - **[HU-04 / S2]** Matriz de permisos por rol (restringir cambios de precio, invitaciones y bajas de miembros a roles autorizados).
 - **[HU-05 / S3]** Productos sin código de barras / acceso rápido para cremería, pan, tortillas y huevo, con soporte UTF-8 y códigos únicos por tienda.
 - **[HU-06 / S4]** Kardex inmutable `inventario_movimientos` con cálculo automático de `stock_actual` por suma de deltas.
