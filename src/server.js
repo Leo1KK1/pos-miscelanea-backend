@@ -4,6 +4,7 @@ const express = require('express');
 const authRoutes = require('./routes/auth.routes');
 const tiendasRoutes = require('./routes/tiendas.routes');
 const productosRoutes = require('./routes/productos.routes');
+const inventarioRoutes = require('./routes/inventario.routes');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -27,6 +28,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/tiendas', tiendasRoutes);
 app.use('/api/productos', productosRoutes);
+app.use('/api/inventario', inventarioRoutes);
 
 /**
  * Respuesta uniforme para rutas inexistentes.

@@ -13,11 +13,18 @@ const {
     cotizarPorCantidad,
     cotizarPorImporte,
 } = require('../utils/calculosGranel');
+const {
+    ErrorCalculoInventario,
+    parsearStockNoNegativoMilesimas,
+} = require('../utils/calculosInventario');
 
 // mergeParams permite leer :tiendaId cuando se monta bajo /api/tiendas/:tiendaId/productos
 const router = express.Router({ mergeParams: true });
 
 const COLUMNAS_PRODUCTO =
+    'id, tienda_id, nombre, codigo_barras, unidad_venta, precio_centavos, controla_inventario, stock_actual, stock_minimo, es_acceso_rapido, orden_acceso_rapido, activo, creado_en, actualizado_en';
+
+const COLUMNAS_PRODUCTO_SPRINT3 =
     'id, tienda_id, nombre, codigo_barras, unidad_venta, precio_centavos, controla_inventario, es_acceso_rapido, orden_acceso_rapido, activo, creado_en, actualizado_en';
 
 const COLUMNAS_PRODUCTO_BASE =
@@ -48,7 +55,7 @@ function parsearEnteroQuery(valor) {
 
 /**
  * Ejecuta una consulta unitaria sobre `productos` seleccionando todas las columnas de catálogo,
- * con fallback limpio a `COLUMNAS_PRODUCTO_BASE` si la migración 003 aún no ha sido aplicada (`42703`).
+ * con fallback limpio a esquemas previos si las migraciones 004 o 003 aún no han sido aplicadas (`42703`).
  *
  * @param {object} supabase
  * @param {(query: object) => object} aplicarFiltros
@@ -58,6 +65,12 @@ async function consultarProductoUnico(supabase, aplicarFiltros) {
     let respuesta = await aplicarFiltros(
         supabase.from('productos').select(COLUMNAS_PRODUCTO)
     ).maybeSingle();
+
+    if (respuesta.error && respuesta.error.code === '42703') {
+        respuesta = await aplicarFiltros(
+            supabase.from('productos').select(COLUMNAS_PRODUCTO_SPRINT3)
+        ).maybeSingle();
+    }
 
     if (respuesta.error && respuesta.error.code === '42703') {
         respuesta = await aplicarFiltros(
@@ -197,12 +210,18 @@ router.get(
             offsetNum = parseado;
         }
 
-        const construirConsulta = (usarEsquemaBase = false) => {
+        const construirConsulta = (esquema = 'sprint4') => {
+            const usarEsquemaBase = esquema === 'base';
+            const columnasSeleccionadas =
+                esquema === 'sprint4'
+                    ? COLUMNAS_PRODUCTO
+                    : esquema === 'sprint3'
+                      ? COLUMNAS_PRODUCTO_SPRINT3
+                      : COLUMNAS_PRODUCTO_BASE;
+
             let consulta = req.supabase
                 .from('productos')
-                .select(
-                    usarEsquemaBase ? COLUMNAS_PRODUCTO_BASE : COLUMNAS_PRODUCTO
-                )
+                .select(columnasSeleccionadas)
                 .eq('tienda_id', req.contextoTienda.id);
 
             if (terminoPlegado !== null && terminoLimpio !== null) {
@@ -261,7 +280,11 @@ router.get(
             return consulta.range(offsetNum, offsetNum + limiteNum - 1);
         };
 
-        let { data, error } = await construirConsulta(false);
+        let { data, error } = await construirConsulta('sprint4');
+
+        if (error && error.code === '42703') {
+            ({ data, error } = await construirConsulta('sprint3'));
+        }
 
         if (
             error &&
@@ -269,7 +292,7 @@ router.get(
             acceso_rapido === undefined &&
             controla_inventario === undefined
         ) {
-            ({ data, error } = await construirConsulta(true));
+            ({ data, error } = await construirConsulta('base'));
         }
 
         if (error) {
@@ -574,9 +597,18 @@ router.post(
             unidad_venta,
             precio_centavos,
             controla_inventario,
+            stock_actual,
+            stock_minimo,
             es_acceso_rapido,
             orden_acceso_rapido,
         } = req.body || {};
+
+        if (stock_actual !== undefined) {
+            return res.status(400).json({
+                error: 'El campo stock_actual solo se actualiza mediante movimientos de inventario.',
+                codigo: 'STOCK_ACTUAL_SOLO_LECTURA',
+            });
+        }
 
         if (id !== undefined && id !== null && !esUuidValido(id)) {
             return res.status(400).json({
@@ -658,6 +690,28 @@ router.post(
             });
         }
 
+        let stockMinimoFormateado;
+        if (stock_minimo !== undefined) {
+            try {
+                const parsedStockMin = parsearStockNoNegativoMilesimas(
+                    stock_minimo,
+                    unidad_venta
+                );
+                stockMinimoFormateado = parsedStockMin.cantidad;
+            } catch (err) {
+                if (
+                    err instanceof ErrorCalculoInventario ||
+                    (err && err.codigo)
+                ) {
+                    return res.status(400).json({
+                        error: err.message,
+                        codigo: err.codigo,
+                    });
+                }
+                throw err;
+            }
+        }
+
         const idNormalizado = id ? id.trim() : undefined;
 
         // Idempotencia para reintentos offline: si el UUID ya fue registrado en esta tienda, devolver éxito sin duplicar
@@ -692,7 +746,7 @@ router.post(
             nuevoProductoBase.id = idNormalizado;
         }
 
-        const nuevoProductoCompleto = {
+        const nuevoProductoSprint3 = {
             ...nuevoProductoBase,
             controla_inventario:
                 controla_inventario !== undefined ? controla_inventario : true,
@@ -702,16 +756,38 @@ router.post(
                 orden_acceso_rapido !== undefined ? orden_acceso_rapido : 100,
         };
 
+        const nuevoProductoCompleto =
+            stockMinimoFormateado !== undefined
+                ? {
+                      ...nuevoProductoSprint3,
+                      stock_minimo: stockMinimoFormateado,
+                  }
+                : nuevoProductoSprint3;
+
         let { data, error } = await req.supabase
             .from('productos')
             .insert(nuevoProductoCompleto)
             .select(COLUMNAS_PRODUCTO)
             .single();
 
-        // Fallback limpio si aún no se aplica la migración 003 y no se exigieron campos exclusivos de Sprint 3
+        // Fallback limpio a columnas de Sprint 3 si aún no se aplica la migración 004
         if (
             error &&
             (error.code === '42703' || error.code === 'PGRST204') &&
+            stock_minimo === undefined
+        ) {
+            ({ data, error } = await req.supabase
+                .from('productos')
+                .insert(nuevoProductoSprint3)
+                .select(COLUMNAS_PRODUCTO_SPRINT3)
+                .single());
+        }
+
+        // Fallback limpio si aún no se aplica la migración 003 y no se exigieron campos exclusivos posteriores
+        if (
+            error &&
+            (error.code === '42703' || error.code === 'PGRST204') &&
+            stock_minimo === undefined &&
             controla_inventario === undefined &&
             es_acceso_rapido === undefined &&
             orden_acceso_rapido === undefined
@@ -770,6 +846,13 @@ router.patch(
             return res.status(403).json({
                 error: 'Tu rol no tiene permiso para modificar productos.',
                 codigo: 'PERMISO_DENEGADO',
+            });
+        }
+
+        if (cuerpo.stock_actual !== undefined) {
+            return res.status(400).json({
+                error: 'El campo stock_actual solo se actualiza mediante movimientos de inventario.',
+                codigo: 'STOCK_ACTUAL_SOLO_LECTURA',
             });
         }
 
@@ -881,6 +964,75 @@ router.patch(
             cambios.activo = cuerpo.activo;
         }
 
+        if (cuerpo.stock_minimo !== undefined) {
+            // Primero validar formato decimal no negativo antes de consultar BD
+            try {
+                parsearStockNoNegativoMilesimas(
+                    cuerpo.stock_minimo,
+                    cambios.unidad_venta || null
+                );
+            } catch (err) {
+                if (
+                    err instanceof ErrorCalculoInventario ||
+                    (err && err.codigo)
+                ) {
+                    return res.status(400).json({
+                        error: err.message,
+                        codigo: err.codigo,
+                    });
+                }
+                throw err;
+            }
+
+            let unidadFinal = cambios.unidad_venta;
+            if (!unidadFinal) {
+                const { data: prodExistente, error: errorExistente } =
+                    await req.supabase
+                        .from('productos')
+                        .select('id, unidad_venta')
+                        .eq('id', productoId.trim())
+                        .eq('tienda_id', req.contextoTienda.id)
+                        .maybeSingle();
+
+                if (errorExistente) {
+                    console.error(
+                        'Error al consultar unidad_venta de producto:',
+                        errorExistente.message
+                    );
+                    return res.status(500).json({
+                        error: 'No fue posible consultar el producto para actualizar.',
+                    });
+                }
+
+                if (!prodExistente) {
+                    return res.status(404).json({
+                        error: 'El producto no existe en la tienda activa.',
+                    });
+                }
+
+                unidadFinal = prodExistente.unidad_venta;
+            }
+
+            try {
+                const parsedStockMin = parsearStockNoNegativoMilesimas(
+                    cuerpo.stock_minimo,
+                    unidadFinal
+                );
+                cambios.stock_minimo = parsedStockMin.cantidad;
+            } catch (err) {
+                if (
+                    err instanceof ErrorCalculoInventario ||
+                    (err && err.codigo)
+                ) {
+                    return res.status(400).json({
+                        error: err.message,
+                        codigo: err.codigo,
+                    });
+                }
+                throw err;
+            }
+        }
+
         if (Object.keys(cambios).length === 0) {
             return res.status(400).json({
                 error: 'Debes enviar al menos un campo válido para actualizar el producto.',
@@ -900,7 +1052,26 @@ router.patch(
             .select(COLUMNAS_PRODUCTO)
             .maybeSingle();
 
-        if (error && error.code === '42703' && !modificaColumnasSprint3) {
+        if (
+            error &&
+            (error.code === '42703' || error.code === 'PGRST204') &&
+            cambios.stock_minimo === undefined
+        ) {
+            ({ data, error } = await req.supabase
+                .from('productos')
+                .update(cambios)
+                .eq('id', productoId.trim())
+                .eq('tienda_id', req.contextoTienda.id)
+                .select(COLUMNAS_PRODUCTO_SPRINT3)
+                .maybeSingle());
+        }
+
+        if (
+            error &&
+            (error.code === '42703' || error.code === 'PGRST204') &&
+            cambios.stock_minimo === undefined &&
+            !modificaColumnasSprint3
+        ) {
             ({ data, error } = await req.supabase
                 .from('productos')
                 .update(cambios)

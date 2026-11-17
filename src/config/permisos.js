@@ -15,6 +15,10 @@ const MATRIZ_PERMISOS = Object.freeze({
     'productos:crear': Object.freeze(['propietario', 'encargado']),
     'productos:editar': Object.freeze(['propietario', 'encargado']),
     'productos:cambiar_precio': Object.freeze(['propietario', 'encargado']),
+    'inventario:leer': Object.freeze(['propietario', 'encargado', 'cajero']),
+    'inventario:kardex': Object.freeze(['propietario', 'encargado']),
+    'inventario:registrar': Object.freeze(['propietario', 'encargado']),
+    'inventario:ajustar': Object.freeze(['propietario', 'encargado']),
 });
 
 /**

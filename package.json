@@ -12,7 +12,8 @@
     "verify:sprint1": "node scripts/verificar_sprint1.js",
     "verify:sprint2": "node scripts/verificar_sprint2.js",
     "verify:sprint3": "node scripts/verificar_sprint3.js",
-    "test": "node scripts/verificar_sprint1.js && node scripts/verificar_sprint2.js && node scripts/verificar_sprint3.js"
+    "verify:sprint4": "node scripts/verificar_sprint4.js",
+    "test": "node scripts/verificar_sprint1.js && node scripts/verificar_sprint2.js && node scripts/verificar_sprint3.js && node scripts/verificar_sprint4.js"
   },
   "keywords": [],
   "author": "",

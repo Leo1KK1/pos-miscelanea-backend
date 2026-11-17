@@ -80,7 +80,10 @@ function verificarMatrizPermisosLocal() {
             `El propietario debe poseer el permiso ${permiso}.`
         );
     }
-    assert.equal(obtenerPermisosDeRol('propietario').length, todosLosPermisos.length);
+    assert.equal(
+        obtenerPermisosDeRol('propietario').length,
+        Object.keys(MATRIZ_PERMISOS).length
+    );
 
     // Permisos de encargado
     const permisosEncargadoSi = [

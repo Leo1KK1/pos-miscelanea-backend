@@ -7,6 +7,7 @@ const { ROLES, tienePermiso } = require('../config/permisos');
 const { emitirConstanciaOffline } = require('../services/licenciaOffline.service');
 const { esUuidValido } = require('../utils/validaciones');
 const productosRouter = require('./productos.routes');
+const inventarioRouter = require('./inventario.routes');
 
 const router = express.Router();
 
@@ -460,5 +461,11 @@ router.patch(
  * /api/tiendas/:tiendaId/productos
  */
 router.use('/:tiendaId/productos', productosRouter);
+
+/**
+ * Subruta anidada para operar existencias y movimientos de inventario por tienda:
+ * /api/tiendas/:tiendaId/inventario
+ */
+router.use('/:tiendaId/inventario', inventarioRouter);
 
 module.exports = router;

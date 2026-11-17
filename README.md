@@ -2,7 +2,7 @@
 
 Aplicación en desarrollo para apoyar la operación cotidiana de pequeñas tiendas de abarrotes, misceláneas y cremerías en México. El proyecto prioriza cobrar rápido en mostrador (por pieza, por peso o por importe en pesos), llevar control de fiados e inventario por libro mayor, aislar estrictamente los datos de cada tienda y operar **sin conexión a internet (*Offline-First*)**.
 
-> **Estado actual:** Sprints 0, 1, 2 y 3 completados y verificados en desarrollo; listo para iniciar **Sprint 4 (Inventario como libro mayor `inventario_movimientos` y compras básicas)**. Consulta el detalle arquitectónico y el tablero en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md).
+> **Estado actual:** Sprints 0, 1, 2, 3 y 4 completados y verificados en desarrollo; listo para iniciar **Sprint 5 (Base móvil Flutter Offline-First, SQLite local y `sync_queue` / Outbox)**. Consulta el detalle arquitectónico y el tablero en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md).
 
 ## Objetivo
 
@@ -11,34 +11,23 @@ Construir un sistema punto de venta móvil sencillo e intuitivo que permita a un
 ## Estado real del repositorio
 
 - **API modular en Express 5 (`src/`):** Conectada con Supabase Auth y PostgreSQL mediante `@supabase/supabase-js` usando el token JWT de cada petición (sin compartir sesión entre solicitudes).
-- **Rutas disponibles (Sprints 1 y 2):**
+- **Rutas disponibles (Sprints 1 a 4):**
   - `GET /api/health` — comprobación de salud del servidor.
-  - `POST /api/auth/registro` — alta de usuario en Supabase Auth.
-  - `POST /api/auth/login` — inicio de sesión con correo y contraseña.
-  - `POST /api/auth/refresh` — renovación segura de sesión (`refresh_token` rotado).
-  - `POST /api/auth/logout` — cierre explícito de sesión actual.
-  - `GET /api/auth/me` — identidad del usuario autenticado.
-  - `GET /api/auth/clave-publica-offline` — clave pública **Ed25519** para verificar constancias de licencia sin conexión en la app móvil.
-  - `GET /api/tiendas` — tiendas activas donde el usuario posee membresía activa (`propietario`, `encargado` o `cajero`).
-  - `POST /api/tiendas` — alta atómica e idempotente de nueva tienda junto con membresía de `propietario`.
-  - `PATCH /api/tiendas/:tiendaId` — edición del nombre comercial (`propietario`).
-  - `GET /api/tiendas/:tiendaId/contexto` — valida pertenencia activa, expone permisos del rol y emite la **constancia criptográfica offline Ed25519** (Grace Period).
-  - `GET /api/tiendas/:tiendaId/miembros` — lista miembros con correo (`propietario` y `encargado`).
-  - `POST /api/tiendas/:tiendaId/miembros` — vincula un miembro por correo respetando jerarquía (`propietario` o `encargado` para `cajero`).
-  - `PATCH /api/tiendas/:tiendaId/miembros/:miembroId` — cambia rol (`propietario`) o suspende/reactiva membresías sin permitir dejar una tienda sin propietario activo.
-  - `GET /api/productos` y `POST /api/productos` (con `X-Tienda-Id: <uuid>` o bajo `/api/tiendas/:tiendaId/productos`) — catálogo aislado por tienda con búsqueda sin tildes (`?q=`), botonera rápida (`?acceso_rapido=true`), control opcional de inventario y paginación gradual (`limite`/`offset`).
-  - `GET /api/productos/por-codigo/:codigo` — búsqueda exacta instantánea por código de barras dentro de la tienda activa.
-  - `GET /api/productos/:productoId` y `PATCH /api/productos/:productoId` — consulta individual, baja lógica (`activo`), configuración de acceso rápido y cambio de precio protegido por rol (`propietario` y `encargado`).
-  - `GET /api/productos/:productoId/historial-precios` — consulta del historial inmutable de cambios de precio (`propietario` y `encargado`).
-  - `POST /api/productos/:productoId/cotizar` — cotización exacta por peso/cantidad (`cantidad`) o por dinero (*"deme \$15 de jamón"*, `importe_centavos`) sin errores de punto flotante.
+  - `POST /api/auth/registro`, `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/me` y `GET /api/auth/clave-publica-offline` — identidad, sesiones y clave pública **Ed25519**.
+  - `GET /api/tiendas`, `POST /api/tiendas`, `PATCH /api/tiendas/:tiendaId`, `GET /api/tiendas/:tiendaId/contexto` — tiendas asignadas, selección de tienda activa y emisión de **constancia criptográfica offline**.
+  - `GET /api/tiendas/:tiendaId/miembros`, `POST /api/tiendas/:tiendaId/miembros`, `PATCH /api/tiendas/:tiendaId/miembros/:miembroId` — gestión jerárquica de equipo por tienda.
+  - `GET /api/productos`, `POST /api/productos`, `GET /api/productos/por-codigo/:codigo`, `GET /api/productos/:productoId`, `PATCH /api/productos/:productoId`, `GET /api/productos/:productoId/historial-precios`, `POST /api/productos/:productoId/cotizar` — catálogo aislado por tienda, historial de precios y cotización bidireccional de granel.
+  - `GET /api/inventario/existencias` (con `X-Tienda-Id` o bajo `/api/tiendas/:tiendaId/inventario/existencias`) — consulta de saldos y alertas (`alerta_bajo_stock`, `alerta_stock_negativo`).
+  - `GET /api/inventario/movimientos` y `POST /api/inventario/movimientos` — auditoría y registro idempotente en el **Libro Mayor (`inventario_movimientos`)** (`entrada_inicial`, `compra` con conversión de bulto/barra, `merma` y `ajuste` con motivo obligatorio).
 - **Documentación técnica y por Sprint:**
-  - [docs/MATRIZ_PERMISOS_Y_SESION.md](docs/MATRIZ_PERMISOS_Y_SESION.md) y [docs/CONTRATO_CATALOGO_Y_GRANEL.md](docs/CONTRATO_CATALOGO_Y_GRANEL.md).
-  - Bitácora detallada por sprint en [`implementation/`](implementation/): Sprints `00`, `01`, `02` y `03`.
+  - [docs/MATRIZ_PERMISOS_Y_SESION.md](docs/MATRIZ_PERMISOS_Y_SESION.md), [docs/CONTRATO_CATALOGO_Y_GRANEL.md](docs/CONTRATO_CATALOGO_Y_GRANEL.md) y [docs/CONTRATO_INVENTARIO_LIBRO_MAYOR.md](docs/CONTRATO_INVENTARIO_LIBRO_MAYOR.md).
+  - Bitácora detallada por sprint en [`implementation/`](implementation/): Sprints `00`, `01`, `02`, `03` y `04`.
 - **Migraciones versionadas (`migrations/`):**
   - `000_diagnostico_y_respaldo_sprint0.sql` — respaldo previo en `private_backups.productos_pre_sprint1`.
   - `001_tiendas_y_membresias.sql` (+ `001_rollback_...`) — `tiendas`, `miembros_tienda`, migración a `Tienda-Demo` y RLS base.
   - `002_identidad_permisos_y_membresias.sql` (+ `002_rollback_...`) — RPCs de gestión jerárquica de miembros, blindaje de columnas de licencia en `tiendas` y soporte de Grace Period offline.
   - `003_catalogo_precios_y_granel.sql` (+ `003_rollback_...`) — normalización UTF-8 `plegar_acentos`, acceso rápido, `controla_inventario` y auditoría inmutable `producto_precios_historial` por trigger.
+  - `004_inventario_libro_mayor.sql` (+ `004_rollback_...`) — libro mayor *append-only* `inventario_movimientos`, `stock_actual` por trigger sumando deltas, `stock_minimo` y RPC idempotente `registrar_movimiento_inventario`.
 
 ## Tecnologías y versiones
 
@@ -122,8 +111,8 @@ El proyecto aplica seis principios desde la base de datos y el backend para evit
 | **Sprint 1** | Crear `tiendas` y `miembros_tienda`, migrar `productos` a `tienda_id` con UUID y aplicar RLS. | Completado |
 | **Sprint 2** | Identidad, sesiones, matriz de permisos por rol y base de constancia firmada offline. | Completado |
 | **Sprint 3** | Catálogo por tienda (con y sin código, botones rápidos) y reglas bidireccionales de granel. | Completado |
-| **Sprint 4** | Inventario como libro mayor (`inventario_movimientos` por deltas) y compras básicas. | **Siguiente** |
-| **Sprint 5** | **Base móvil Flutter Offline-First:** SQLite local, cola `sync_queue` (Outbox) y vigencia offline. | Pendiente |
+| **Sprint 4** | Inventario como libro mayor (`inventario_movimientos` por deltas) y compras básicas. | Completado |
+| **Sprint 5** | **Base móvil Flutter Offline-First:** SQLite local, cola `sync_queue` (Outbox) y vigencia offline. | **Siguiente** |
 | **Sprint 6** | Ventas en efectivo, granel inverso y caja (SQLite + RPC atómica e idempotente). | Pendiente |
 | **Sprint 7** | Fiados, abonos (`fiado_abonos`), salidas de caja y modo lectura garantizado al vencer plan. | Pendiente |
 | **Sprint 8** | Administración de planes, suscripciones, Grace Period completo y panel SaaS aislado. | Pendiente |

@@ -52,8 +52,8 @@ Documento vivo de referencia técnica y seguimiento del **POS SaaS para Miscelá
 | **Sprint 1** | Tiendas, membresías y migración UUID | **Terminado** | Tablas `tiendas` y `miembros_tienda`, migración reversible de `productos` a `tienda_id`, RLS sin recursión y rutas de contexto de tienda. |
 | **Sprint 2** | Identidad, roles, permisos y base de firma offline | **Terminado** | Matriz `propietario`/`encargado`/`cajero`, renovación de sesión, RPCs de equipo y constancia firmada **Ed25519** de vigencia offline. |
 | **Sprint 3** | Catálogo, botones rápidos y reglas de granel | **Terminado** | Búsqueda UTF-8 `plegar_acentos`, botonera rápida, `producto_precios_historial` por trigger y motor `BigInt` peso <-> importe. |
-| **Sprint 4** | Inventario como libro mayor (`inventario_movimientos`) | **Siguiente** | Entradas de bulto/pieza, ajustes y mermas por deltas con UUID e idempotencia; `stock_actual` mantenido por trigger. |
-| **Sprint 5** | Base móvil Flutter Offline-First y `sync_queue` | Pendiente | App Flutter con SQLite local, patrón *Outbox* (`sync_queue`), descarga incremental de catálogo y verificación criptográfica offline. |
+| **Sprint 4** | Inventario como libro mayor (`inventario_movimientos`) | **Terminado** | Libro mayor *append-only*, conversión de bultos/barras, stock negativo con alerta y `stock_actual` por trigger. |
+| **Sprint 5** | Base móvil Flutter Offline-First y `sync_queue` | **Siguiente** | App Flutter con SQLite local, patrón *Outbox* (`sync_queue`), receptor batch idempotente y verificación Ed25519 offline. |
 | **Sprint 6** | Ventas en efectivo, granel inverso y caja (Offline-First) | Pendiente | Cobro en 2 toques en SQLite + RPC transaccional idempotente en PostgreSQL (venta + detalles + descuento inventario + caja). |
 | **Sprint 7** | Fiados, abonos y salidas de caja (Offline-First) | Pendiente | Libro mayor de deudas/abonos con UUID, pagos a proveedores/gastos y modo lectura garantizado ante vencimiento de plan. |
 | **Sprint 8** | Planes, suscripciones y panel SaaS aislado | Pendiente | Estados de licencia, Grace Period completo (72–120 h), webhooks idempotentes y panel administrativo sin acceso a ventas/fiados. |
@@ -78,13 +78,15 @@ Documento vivo de referencia técnica y seguimiento del **POS SaaS para Miscelá
 - **[HU-07 / S3-01]** Búsqueda rápida por nombre/código con plegado de acentos UTF-8 (`plegar_acentos`), paginación gradual, baja lógica (`activo`), `controla_inventario` y botonera de acceso rápido (`es_acceso_rapido`, `orden_acceso_rapido`).
 - **[HU-08 / S3-02]** Historial inmutable de cambios de precio (`producto_precios_historial`) alimentado por trigger `SECURITY DEFINER` y blindado en PostgREST.
 - **[HU-09 / S3-03]** Motor `BigInt` de venta a granel bidireccional (`src/utils/calculosGranel.js` + `POST /api/productos/:id/cotizar`) verificado con `npm run verify:sprint3`.
+- **[HU-10 / S4-01]** Tabla inmutable *append-only* `inventario_movimientos` (deltas `NUMERIC(12,3)` con `UUID` e idempotencia, FK compuesta intra-tienda y prohibición de `UPDATE`/`DELETE`).
+- **[HU-11 / S4-02]** Campos `stock_actual` (calculado por trigger y blindado en PostgREST) y `stock_minimo`, con política de stock negativo permitido con alertas (`alerta_stock_negativo`, `alerta_bajo_stock`).
+- **[HU-12 / S4-03]** Conversión exacta `BigInt` de compras por presentación/bulto, mermas y ajustes con motivo obligatorio, verificada con `npm run verify:sprint4`.
 
-### En preparación (Sprint 4 — Inventario como libro mayor `inventario_movimientos` y compras básicas)
-- **[HU-10 / S4-01]** Tabla inmutable `inventario_movimientos` (deltas `NUMERIC(12,3)` con `UUID` e idempotencia por evento: `entrada_inicial`, `compra`, `ajuste`, `merma`, y reservado `venta` / `cancelacion_venta` para Sprint 6).
-- **[HU-11 / S4-02]** Campo calculado `stock_actual` y `stock_minimo` en `productos` mantenido automáticamente mediante trigger en PostgreSQL sumando los deltas (evitando sobrescrituras cuando varios dispositivos sincronizan desfasados).
-- **[HU-12 / S4-03]** RPC transaccional para registrar compras/entradas (incluyendo entrada de bulto/barra expresada en `kg`/`litro`/`pieza` con costo opcional de referencia), ajustes y mermas con motivo obligatorio y usuario responsable.
+### En preparación (Sprint 5 — Base móvil Offline-First, SQLite local y cola `sync_queue` / Outbox)
+- **[HU-13 / S5-01]** Definir y construir en el backend el contrato unificado de sincronización (`/api/sync/pull` incremental + `/api/sync/push` por lotes de eventos *Outbox* con bitácora `sync_eventos_procesados` idempotente y registro de `dispositivos_tienda` + renovación automática de constancia offline **Ed25519**).
+- **[HU-14 / S5-02]** Crear la base de la app móvil Flutter con SQLite local (`sqflite` / `drift`), esquema de catálogo local, estado de licencia firmada (con anti-retroceso de reloj) y tabla local `sync_queue` (`pendiente`, `en_proceso`, `sincronizado`, `error`) antes de construir el módulo de Ventas.
 
-### Pendiente (Sprints 5 a 9)
+### Pendiente (Sprints 6 a 9)
 - **[HU-04 / S2]** Matriz de permisos por rol (restringir cambios de precio, invitaciones y bajas de miembros a roles autorizados).
 - **[HU-05 / S3]** Productos sin código de barras / acceso rápido para cremería, pan, tortillas y huevo, con soporte UTF-8 y códigos únicos por tienda.
 - **[HU-06 / S4]** Kardex inmutable `inventario_movimientos` con cálculo automático de `stock_actual` por suma de deltas.
