@@ -1,5 +1,6 @@
 const { crearClienteSupabase } = require('../config/supabase');
 const { esUuidValido } = require('../utils/validaciones');
+const { tienePermiso, obtenerPermisosDeRol } = require('../config/permisos');
 
 /**
  * Verifica que la petición incluya un token JWT válido de Supabase Auth.
@@ -10,6 +11,7 @@ async function verificarSesion(req, res, next) {
     if (!encabezado.startsWith('Bearer ')) {
         return res.status(401).json({
             error: 'Debes enviar un token de acceso.',
+            codigo: 'TOKEN_REQUERIDO',
         });
     }
 
@@ -18,6 +20,7 @@ async function verificarSesion(req, res, next) {
     if (!token) {
         return res.status(401).json({
             error: 'El token de acceso está vacío.',
+            codigo: 'TOKEN_REQUERIDO',
         });
     }
 
@@ -31,6 +34,7 @@ async function verificarSesion(req, res, next) {
     if (error || !user) {
         return res.status(401).json({
             error: 'La sesión no es válida o ha expirado.',
+            codigo: 'SESION_INVALIDA_O_EXPIRADA',
         });
     }
 
@@ -42,14 +46,16 @@ async function verificarSesion(req, res, next) {
 }
 
 /**
- * Fábrica de middleware que resuelve la tienda activa (por parámetro :tiendaId o encabezado X-Tienda-Id)
- * y comprueba en base de datos que el usuario autenticado tenga membresía activa en dicha tienda.
+ * Fábrica de middleware que resuelve la tienda activa (por parámetro :tiendaId o encabezado X-Tienda-Id),
+ * comprueba en base de datos que el usuario autenticado tenga membresía activa en dicha tienda
+ * y evalúa permisos/roles requeridos.
  *
  * @param {object} opciones
  * @param {string[]} [opciones.rolesPermitidos] Lista opcional de roles autorizados (ej. ['propietario', 'encargado']).
+ * @param {string} [opciones.permisoRequerido] Permiso opcional de la matriz central (ej. 'productos:crear').
  */
 function verificarContextoTienda(opciones = {}) {
-    const { rolesPermitidos = null } = opciones;
+    const { rolesPermitidos = null, permisoRequerido = null } = opciones;
 
     return async function middlewareContextoTienda(req, res, next) {
         const idPorRuta =
@@ -62,7 +68,11 @@ function verificarContextoTienda(opciones = {}) {
                 ? encabezadoTienda.trim()
                 : '';
 
-        if (idPorRuta && idPorEncabezado && idPorRuta.toLowerCase() !== idPorEncabezado.toLowerCase()) {
+        if (
+            idPorRuta &&
+            idPorEncabezado &&
+            idPorRuta.toLowerCase() !== idPorEncabezado.toLowerCase()
+        ) {
             return res.status(400).json({
                 error: 'El identificador de tienda en la ruta no coincide con el encabezado X-Tienda-Id.',
             });
@@ -84,9 +94,7 @@ function verificarContextoTienda(opciones = {}) {
 
         const { data: membresia, error } = await req.supabase
             .from('miembros_tienda')
-            .select(
-                'id, tienda_id, usuario_id, rol, estado, tiendas!inner(id, nombre, estado, creado_en, actualizado_en)'
-            )
+            .select('id, tienda_id, usuario_id, rol, estado, tiendas!inner(*)')
             .eq('tienda_id', tiendaId)
             .eq('usuario_id', req.usuario.id)
             .eq('estado', 'activo')
@@ -105,6 +113,15 @@ function verificarContextoTienda(opciones = {}) {
             });
         }
 
+        if (permisoRequerido && !tienePermiso(membresia.rol, permisoRequerido)) {
+            return res.status(403).json({
+                error: 'Tu rol en esta tienda no tiene permiso para realizar esta acción.',
+                codigo: 'PERMISO_DENEGADO',
+                permiso_requerido: permisoRequerido,
+                rol_actual: membresia.rol,
+            });
+        }
+
         if (
             Array.isArray(rolesPermitidos) &&
             rolesPermitidos.length > 0 &&
@@ -112,6 +129,8 @@ function verificarContextoTienda(opciones = {}) {
         ) {
             return res.status(403).json({
                 error: 'Tu rol en esta tienda no tiene permiso para realizar esta acción.',
+                codigo: 'PERMISO_DENEGADO',
+                rol_actual: membresia.rol,
             });
         }
 
@@ -119,8 +138,12 @@ function verificarContextoTienda(opciones = {}) {
             id: membresia.tiendas.id,
             nombre: membresia.tiendas.nombre,
             estado: membresia.tiendas.estado,
+            estado_suscripcion: membresia.tiendas.estado_suscripcion ?? 'prueba',
+            licencia_expira_en: membresia.tiendas.licencia_expira_en ?? null,
+            ventana_offline_horas: membresia.tiendas.ventana_offline_horas ?? 96,
             rol: membresia.rol,
             membresia_id: membresia.id,
+            permisos: obtenerPermisosDeRol(membresia.rol),
         };
 
         next();

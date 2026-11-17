@@ -2,7 +2,7 @@
 
 Aplicación en desarrollo para apoyar la operación cotidiana de pequeñas tiendas de abarrotes, misceláneas y cremerías en México. El proyecto prioriza cobrar rápido en mostrador (por pieza, por peso o por importe en pesos), llevar control de fiados e inventario por libro mayor, aislar estrictamente los datos de cada tienda y operar **sin conexión a internet (*Offline-First*)**.
 
-> **Estado actual:** Sprints 0 y 1 completados y verificados en desarrollo; listo para iniciar **Sprint 2 (Identidad, permisos por rol y constancia firmada offline)**. Consulta el detalle arquitectónico y el tablero en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md).
+> **Estado actual:** Sprints 0, 1 y 2 completados y verificados en desarrollo; listo para iniciar **Sprint 3 (Catálogo, botones rápidos, historial de precios y reglas bidireccionales de granel)**. Consulta el detalle arquitectónico y el tablero en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md).
 
 ## Objetivo
 
@@ -11,20 +11,28 @@ Construir un sistema punto de venta móvil sencillo e intuitivo que permita a un
 ## Estado real del repositorio
 
 - **API modular en Express 5 (`src/`):** Conectada con Supabase Auth y PostgreSQL mediante `@supabase/supabase-js` usando el token JWT de cada petición (sin compartir sesión entre solicitudes).
-- **Rutas disponibles (Sprint 1):**
+- **Rutas disponibles (Sprints 1 y 2):**
   - `GET /api/health` — comprobación de salud del servidor.
-  - `POST /api/auth/login` — inicio de sesión con correo y contraseña vía Supabase Auth.
+  - `POST /api/auth/registro` — alta de usuario en Supabase Auth.
+  - `POST /api/auth/login` — inicio de sesión con correo y contraseña.
+  - `POST /api/auth/refresh` — renovación segura de sesión (`refresh_token` rotado).
+  - `POST /api/auth/logout` — cierre explícito de sesión actual.
   - `GET /api/auth/me` — identidad del usuario autenticado.
-  - `GET /api/tiendas` — consulta de tiendas activas donde el usuario posee membresía activa (`propietario`, `encargado` o `cajero`).
-  - `POST /api/tiendas` — alta atómica e idempotente de una nueva tienda junto con su membresía de `propietario` (soporta `id` UUID opcional generado en cliente).
-  - `GET /api/tiendas/:tiendaId/contexto` — valida pertenencia activa y devuelve el contexto de tienda seleccionada.
-  - `GET /api/tiendas/:tiendaId/miembros` — lista los miembros de la tienda (`propietario` y `encargado`).
-  - `GET /api/productos` (con encabezado `X-Tienda-Id: <uuid>`) o `GET /api/tiendas/:tiendaId/productos` — catálogo aislado por tienda, con soporte opcional `?actualizado_desde=<ISO-8601>` y `?solo_activos=true`.
-  - `POST /api/productos` (con encabezado `X-Tienda-Id: <uuid>`) o `POST /api/tiendas/:tiendaId/productos` — alta idempotente de producto por `pieza`, `kg` o `litro` en centavos (`propietario` y `encargado`).
+  - `GET /api/auth/clave-publica-offline` — clave pública **Ed25519** para verificar constancias de licencia sin conexión en la app móvil.
+  - `GET /api/tiendas` — tiendas activas donde el usuario posee membresía activa (`propietario`, `encargado` o `cajero`).
+  - `POST /api/tiendas` — alta atómica e idempotente de nueva tienda junto con membresía de `propietario`.
+  - `PATCH /api/tiendas/:tiendaId` — edición del nombre comercial (`propietario`).
+  - `GET /api/tiendas/:tiendaId/contexto` — valida pertenencia activa, expone permisos del rol y emite la **constancia criptográfica offline Ed25519** (Grace Period).
+  - `GET /api/tiendas/:tiendaId/miembros` — lista miembros con correo (`propietario` y `encargado`).
+  - `POST /api/tiendas/:tiendaId/miembros` — vincula un miembro por correo respetando jerarquía (`propietario` o `encargado` para `cajero`).
+  - `PATCH /api/tiendas/:tiendaId/miembros/:miembroId` — cambia rol (`propietario`) o suspende/reactiva membresías sin permitir dejar una tienda sin propietario activo.
+  - `GET /api/productos` y `POST /api/productos` (con `X-Tienda-Id: <uuid>` o bajo `/api/tiendas/:tiendaId/productos`) — catálogo aislado por tienda.
+  - `PATCH /api/productos/:productoId` (o `/api/tiendas/:tiendaId/productos/:productoId`) — actualización parcial y cambio de precio protegido por rol (`propietario` y `encargado`; bloqueado para `cajero`).
+- **Documentación de permisos y sesiones:** [docs/MATRIZ_PERMISOS_Y_SESION.md](docs/MATRIZ_PERMISOS_Y_SESION.md).
 - **Migraciones versionadas (`migrations/`):**
   - `000_diagnostico_y_respaldo_sprint0.sql` — respaldo previo en `private_backups.productos_pre_sprint1`.
-  - `001_tiendas_y_membresias.sql` — creación de `tiendas`, `miembros_tienda`, migración de `productos` a `Tienda-Demo` (`tienda_id`), índices por tienda y políticas RLS sin recursión.
-  - `001_rollback_tiendas_y_membresias.sql` — reversión segura en entorno de desarrollo.
+  - `001_tiendas_y_membresias.sql` (+ `001_rollback_...`) — `tiendas`, `miembros_tienda`, migración a `Tienda-Demo` y RLS base.
+  - `002_identidad_permisos_y_membresias.sql` (+ `002_rollback_...`) — RPCs de gestión jerárquica de miembros, blindaje de columnas de licencia en `tiendas` y soporte de Grace Period offline.
 
 ## Tecnologías y versiones
 
@@ -80,7 +88,7 @@ El proyecto aplica seis principios desde la base de datos y el backend para evit
    - `PORT`: puerto HTTP local (por defecto `3000`).
    - `SUPABASE_URL`: URL del proyecto de Supabase de desarrollo.
    - `SUPABASE_PUBLISHABLE_KEY`: clave pública (`anon` / `publishable`) de Supabase.
-   - `OFFLINE_LICENSE_SECRET`: clave secreta local del servidor (mínimo 32 bytes hex) reservada para firmar constancias de vigencia offline.
+   - `OFFLINE_LICENSE_PRIVATE_KEY_B64` y `OFFLINE_LICENSE_PUBLIC_KEY_B64`: par de claves asimétricas **Ed25519** (DER en Base64) usadas por el servidor para firmar constancias de vigencia offline sin exponer claves privadas en la app móvil.
 
 4. Inicia el servidor:
 
@@ -106,8 +114,8 @@ El proyecto aplica seis principios desde la base de datos y el backend para evit
 | --- | --- | --- |
 | **Sprint 0** | Proteger API existente, configurar Git, `.env.example`, respaldo SQL y arquitectura base. | Completado |
 | **Sprint 1** | Crear `tiendas` y `miembros_tienda`, migrar `productos` a `tienda_id` con UUID y aplicar RLS. | Completado |
-| **Sprint 2** | Identidad, sesiones, matriz de permisos por rol y base de constancia firmada offline. | **Siguiente** |
-| **Sprint 3** | Catálogo por tienda (con y sin código, botones rápidos) y reglas bidireccionales de granel. | Pendiente |
+| **Sprint 2** | Identidad, sesiones, matriz de permisos por rol y base de constancia firmada offline. | Completado |
+| **Sprint 3** | Catálogo por tienda (con y sin código, botones rápidos) y reglas bidireccionales de granel. | **Siguiente** |
 | **Sprint 4** | Inventario como libro mayor (`inventario_movimientos` por deltas) y compras básicas. | Pendiente |
 | **Sprint 5** | **Base móvil Flutter Offline-First:** SQLite local, cola `sync_queue` (Outbox) y vigencia offline. | Pendiente |
 | **Sprint 6** | Ventas en efectivo, granel inverso y caja (SQLite + RPC atómica e idempotente). | Pendiente |

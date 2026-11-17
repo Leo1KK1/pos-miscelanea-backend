@@ -10,7 +10,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "verify:sprint1": "node scripts/verificar_sprint1.js",
-    "test": "node scripts/verificar_sprint1.js"
+    "verify:sprint2": "node scripts/verificar_sprint2.js",
+    "test": "node scripts/verificar_sprint1.js && node scripts/verificar_sprint2.js"
   },
   "keywords": [],
   "author": "",
