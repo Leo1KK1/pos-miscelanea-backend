@@ -2,7 +2,7 @@
 
 Aplicación en desarrollo para apoyar la operación cotidiana de pequeñas tiendas de abarrotes, misceláneas y cremerías en México. El proyecto prioriza cobrar rápido en mostrador (por pieza, por peso o por importe en pesos), llevar control de fiados e inventario por libro mayor, aislar estrictamente los datos de cada tienda y operar **sin conexión a internet (*Offline-First*)**.
 
-> **Estado actual:** Sprint 0 completado; iniciando **Sprint 1 (Tiendas, membresías y migración UUID)**. Consulta el detalle arquitectónico y el tablero en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md).
+> **Estado actual:** Sprints 0 y 1 completados y verificados en desarrollo; listo para iniciar **Sprint 2 (Identidad, permisos por rol y constancia firmada offline)**. Consulta el detalle arquitectónico y el tablero en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md).
 
 ## Objetivo
 
@@ -10,13 +10,21 @@ Construir un sistema punto de venta móvil sencillo e intuitivo que permita a un
 
 ## Estado real del repositorio
 
-- **API inicial funcional (`src/server.js`):** Servidor Express 5 conectado con Supabase Auth y PostgreSQL mediante `@supabase/supabase-js` usando el token JWT de cada petición (sin compartir sesión entre solicitudes).
-- **Rutas actuales:**
+- **API modular en Express 5 (`src/`):** Conectada con Supabase Auth y PostgreSQL mediante `@supabase/supabase-js` usando el token JWT de cada petición (sin compartir sesión entre solicitudes).
+- **Rutas disponibles (Sprint 1):**
   - `GET /api/health` — comprobación de salud del servidor.
   - `POST /api/auth/login` — inicio de sesión con correo y contraseña vía Supabase Auth.
-  - `GET /api/productos` — consulta de productos (actualmente ligada al usuario autenticado; en migración a `tienda_id` en Sprint 1).
-  - `POST /api/productos` — alta de producto por `pieza`, `kg` o `litro` con precio entero en centavos.
-- **Trabajo inmediato (Sprint 1):** Migrar de `propietario_id` a `tienda_id` con tablas `tiendas` y `miembros_tienda`, estandarizar `UUID`, aplicar políticas RLS sin recursión y seleccionar tienda activa en la API.
+  - `GET /api/auth/me` — identidad del usuario autenticado.
+  - `GET /api/tiendas` — consulta de tiendas activas donde el usuario posee membresía activa (`propietario`, `encargado` o `cajero`).
+  - `POST /api/tiendas` — alta atómica e idempotente de una nueva tienda junto con su membresía de `propietario` (soporta `id` UUID opcional generado en cliente).
+  - `GET /api/tiendas/:tiendaId/contexto` — valida pertenencia activa y devuelve el contexto de tienda seleccionada.
+  - `GET /api/tiendas/:tiendaId/miembros` — lista los miembros de la tienda (`propietario` y `encargado`).
+  - `GET /api/productos` (con encabezado `X-Tienda-Id: <uuid>`) o `GET /api/tiendas/:tiendaId/productos` — catálogo aislado por tienda, con soporte opcional `?actualizado_desde=<ISO-8601>` y `?solo_activos=true`.
+  - `POST /api/productos` (con encabezado `X-Tienda-Id: <uuid>`) o `POST /api/tiendas/:tiendaId/productos` — alta idempotente de producto por `pieza`, `kg` o `litro` en centavos (`propietario` y `encargado`).
+- **Migraciones versionadas (`migrations/`):**
+  - `000_diagnostico_y_respaldo_sprint0.sql` — respaldo previo en `private_backups.productos_pre_sprint1`.
+  - `001_tiendas_y_membresias.sql` — creación de `tiendas`, `miembros_tienda`, migración de `productos` a `Tienda-Demo` (`tienda_id`), índices por tienda y políticas RLS sin recursión.
+  - `001_rollback_tiendas_y_membresias.sql` — reversión segura en entorno de desarrollo.
 
 ## Tecnologías y versiones
 
@@ -97,8 +105,8 @@ El proyecto aplica seis principios desde la base de datos y el backend para evit
 | Etapa | Objetivo principal | Estado |
 | --- | --- | --- |
 | **Sprint 0** | Proteger API existente, configurar Git, `.env.example`, respaldo SQL y arquitectura base. | Completado |
-| **Sprint 1** | Crear `tiendas` y `miembros_tienda`, migrar `productos` a `tienda_id` con UUID y aplicar RLS. | **En curso** |
-| **Sprint 2** | Identidad, sesiones, matriz de permisos por rol y base de constancia firmada offline. | Pendiente |
+| **Sprint 1** | Crear `tiendas` y `miembros_tienda`, migrar `productos` a `tienda_id` con UUID y aplicar RLS. | Completado |
+| **Sprint 2** | Identidad, sesiones, matriz de permisos por rol y base de constancia firmada offline. | **Siguiente** |
 | **Sprint 3** | Catálogo por tienda (con y sin código, botones rápidos) y reglas bidireccionales de granel. | Pendiente |
 | **Sprint 4** | Inventario como libro mayor (`inventario_movimientos` por deltas) y compras básicas. | Pendiente |
 | **Sprint 5** | **Base móvil Flutter Offline-First:** SQLite local, cola `sync_queue` (Outbox) y vigencia offline. | Pendiente |

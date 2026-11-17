@@ -49,8 +49,8 @@ Documento vivo de referencia técnica y seguimiento del **POS SaaS para Miscelá
 | Sprint | Nombre | Estado | Entregable clave |
 | --- | --- | --- | --- |
 | **Sprint 0** | Preparación, Git y respaldo base | **Terminado** | Repo limpio sin secretos, `.env.example`, guía de respaldo SQL y arquitectura base. |
-| **Sprint 1** | Tiendas, membresías y migración UUID | **En curso** | Tablas `tiendas` y `miembros_tienda`, migración reversible de `productos` a `tienda_id`, RLS sin recursión y rutas de contexto de tienda. |
-| **Sprint 2** | Identidad, roles, permisos y base de firma offline | Pendiente | Matriz `propietario`/`encargado`/`cajero`, renovación de sesión, emisión inicial de constancia firmada de sincronización. |
+| **Sprint 1** | Tiendas, membresías y migración UUID | **Terminado** | Tablas `tiendas` y `miembros_tienda`, migración reversible de `productos` a `tienda_id`, RLS sin recursión y rutas de contexto de tienda. |
+| **Sprint 2** | Identidad, roles, permisos y base de firma offline | **Siguiente** | Matriz `propietario`/`encargado`/`cajero`, renovación de sesión, emisión inicial de constancia firmada de sincronización. |
 | **Sprint 3** | Catálogo, botones rápidos y reglas de granel | Pendiente | Productos con/sin código, precios en centavos, marcas `actualizado_en` para sync incremental y motor de cálculo peso <-> importe. |
 | **Sprint 4** | Inventario como libro mayor (`inventario_movimientos`) | Pendiente | Entradas de bulto/pieza, ajustes y mermas por deltas con UUID e idempotencia; `stock_actual` mantenido por trigger. |
 | **Sprint 5** | Base móvil Flutter Offline-First y `sync_queue` | Pendiente | App Flutter con SQLite local, patrón *Outbox* (`sync_queue`), descarga incremental de catálogo y verificación criptográfica offline. |
@@ -68,14 +68,17 @@ Documento vivo de referencia técnica y seguimiento del **POS SaaS para Miscelá
 - **[S0-02]** Configurar `.gitignore` seguro, `.env.example` sin credenciales y scripts `start` / `dev` en `package.json`.
 - **[S0-03]** Documentar las 6 decisiones arquitectónicas y reordenar Sprints en `README.md` y `docs/`.
 - **[S0-04]** Crear script `migrations/000_diagnostico_y_respaldo_sprint0.sql` para respaldar datos de prueba antes de tocar `productos`.
+- **[HU-00 / S1-00]** Diagnóstico y respaldo verificable en `private_backups.productos_pre_sprint1` (3 productos originales resguardados).
+- **[HU-01 / S1-01]** Tablas `tiendas` y `miembros_tienda` con `UUID`, roles (`propietario`, `encargado`, `cajero`) y alta atómica e idempotente (`crear_tienda_con_propietario`).
+- **[HU-02 / S1-02]** Migración `001_tiendas_y_membresias.sql` aplicada y verificada en `Tienda-Demo` conservando íntegros `Jamón`, `Queso Oaxaca` y `Refresco de cola`.
+- **[HU-03 / S1-03]** Selección y validación de tienda activa (`X-Tienda-Id` / `:tiendaId`), aislamiento multi-tienda verificado con `npm run verify:sprint1` y políticas RLS sin recursión. *(Nota pendiente para Sprint 2: ejecutar la prueba cruzada con `TEST_USER2` al probar invitaciones, roles `cajero`/`encargado` y membresías suspendidas).*
 
-### En curso (Sprint 1 — Rama `feat/tiendas-membresias`)
-- **[HU-00 / S1-00]** Ejecutar diagnóstico y respaldo verificable de los productos actuales en Supabase antes de migrar.
-- **[HU-01 / S1-01]** Como usuario con cuenta, quiero pertenecer a una o varias tiendas con un rol específico (`propietario`, `encargado`, `cajero`) y consultar únicamente mis tiendas activas.
-- **[HU-02 / S1-02]** Como propietario actual, quiero que mis productos de prueba existentes se conserven íntegros y queden asignados a mi tienda inicial mediante una migración reversible con `UUID`.
-- **[HU-03 / S1-03]** Como miembro activo de una tienda, quiero seleccionar una tienda activa (`X-Tienda-Id` / rutas por tienda) y que tanto Node.js como PostgreSQL RLS impidan leer o escribir datos de tiendas ajenas.
+### En preparación (Sprint 2 — Identidad, roles, permisos y base de licencia offline)
+- **[HU-04 / S2-01]** Definir renovación (`refresh`), cierre y expiración de sesión en la API, más emisión inicial de la constancia firmada criptográficamente con hora del servidor para operación sin conexión (Regla 6).
+- **[HU-05 / S2-02]** Implementar matriz de permisos y rutas/RPC para invitar o registrar miembros en una tienda (`encargado`, `cajero`), cambiar rol y suspender/reactivar membresías.
+- **[HU-06 / S2-03]** Validar con segundo usuario de prueba (`TEST_USER2`) membresías suspendidas, bloqueo de `cajero` al intentar cambiar precios o roles y bloqueo de acceso cruzado directo en PostgREST.
 
-### Pendiente (Próximos Sprints)
+### Pendiente (Sprints 3 a 9)
 - **[HU-04 / S2]** Matriz de permisos por rol (restringir cambios de precio, invitaciones y bajas de miembros a roles autorizados).
 - **[HU-05 / S3]** Productos sin código de barras / acceso rápido para cremería, pan, tortillas y huevo, con soporte UTF-8 y códigos únicos por tienda.
 - **[HU-06 / S4]** Kardex inmutable `inventario_movimientos` con cálculo automático de `stock_actual` por suma de deltas.
