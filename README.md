@@ -1,152 +1,117 @@
 # Punto de venta SaaS para misceláneas
 
-Aplicación en desarrollo para apoyar la operación de pequeñas tiendas y misceláneas en México. El proyecto busca ofrecer una solución móvil sencilla para registrar ventas, consultar inventario y administrar una o varias tiendas desde una misma cuenta.
+Aplicación en desarrollo para apoyar la operación cotidiana de pequeñas tiendas de abarrotes, misceláneas y cremerías en México. El proyecto prioriza cobrar rápido en mostrador (por pieza, por peso o por importe en pesos), llevar control de fiados e inventario por libro mayor, aislar estrictamente los datos de cada tienda y operar **sin conexión a internet (*Offline-First*)**.
 
-> **Estado:** etapa inicial de desarrollo. Este README se basa en el plan de trabajo; las instrucciones específicas de la API deben completarse después de revisar el código existente.
+> **Estado actual:** Sprint 0 completado; iniciando **Sprint 1 (Tiendas, membresías y migración UUID)**. Consulta el detalle arquitectónico y el tablero en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md).
 
 ## Objetivo
 
-Construir un primer prototipo funcional que permita a una tienda registrar ventas en efectivo por pieza o por peso, llevar un inventario básico y continuar vendiendo cuando no haya conexión a internet. La información se organizará por tienda y cada usuario tendrá los permisos correspondientes a su membresía.
+Construir un sistema punto de venta móvil sencillo e intuitivo que permita a una tienda cobrar ventas en efectivo en pocos toques, controlar inventario y fiados sin sobrescrituras entre dispositivos, y seguir operando cuando falle el internet o los datos móviles dentro del local. Una misma cuenta puede pertenecer a varias tiendas con un rol específico por negocio (`propietario`, `encargado` o `cajero`).
 
-## Estado actual
+## Estado real del repositorio
 
-De acuerdo con el plan del proyecto:
+- **API inicial funcional (`src/server.js`):** Servidor Express 5 conectado con Supabase Auth y PostgreSQL mediante `@supabase/supabase-js` usando el token JWT de cada petición (sin compartir sesión entre solicitudes).
+- **Rutas actuales:**
+  - `GET /api/health` — comprobación de salud del servidor.
+  - `POST /api/auth/login` — inicio de sesión con correo y contraseña vía Supabase Auth.
+  - `GET /api/productos` — consulta de productos (actualmente ligada al usuario autenticado; en migración a `tienda_id` en Sprint 1).
+  - `POST /api/productos` — alta de producto por `pieza`, `kg` o `litro` con precio entero en centavos.
+- **Trabajo inmediato (Sprint 1):** Migrar de `propietario_id` a `tienda_id` con tablas `tiendas` y `miembros_tienda`, estandarizar `UUID`, aplicar políticas RLS sin recursión y seleccionar tienda activa en la API.
 
-- Existe una API inicial con Node.js y Express conectada a Supabase Auth y PostgreSQL.
-- Hay productos de prueba asociados a un propietario.
-- La separación de datos entre tiendas todavía no se ha validado.
-- Las membresías por tienda, la aplicación móvil y la sincronización sin conexión forman parte del trabajo pendiente.
-
-El código y las pruebas del repositorio serán la referencia para mantener actualizada esta sección.
-
-## Alcance previsto
-
-### Para las tiendas
-
-- Acceso de usuarios y selección de tienda activa.
-- Administración de varias tiendas desde una misma cuenta, con permisos por tienda.
-- Catálogo de productos por pieza o peso, con código opcional.
-- Inventario básico, entradas, ajustes y mermas.
-- Ventas en efectivo, cálculo de cambio y registro de caja.
-- Registro de fiados y abonos.
-- Venta en efectivo sin internet y sincronización posterior. El primer piloto se plantea con una caja por tienda.
-
-Estas funciones son objetivos del proyecto y no se presentan como implementadas hasta que se desarrollen y comprueben. Los pagos electrónicos integrados requieren conexión; su proveedor y alcance se definirán posteriormente.
-
-### Para la administración del SaaS
-
-Se prevé un panel para consultar planes, suscripciones, datos de contacto y eventos técnicos necesarios para operar el servicio. El panel deberá limitar el acceso a los datos comerciales de las tiendas. Los permisos privilegiados de infraestructura también necesitan controles, pues el diseño del panel por sí solo no impide técnicamente el acceso a la base de datos.
-
-## Tecnologías previstas
+## Tecnologías y versiones
 
 | Componente | Tecnología | Estado |
 | --- | --- | --- |
-| API | Node.js y Express | API inicial existente según el plan |
-| Autenticación | Supabase Auth | Conectada a la API inicial según el plan |
-| Base de datos remota | PostgreSQL con Supabase | En uso inicial según el plan |
-| Aplicación móvil | Flutter | Pendiente |
-| Almacenamiento local | SQLite | Previsto para la app móvil |
-| Control de versiones | Git | Preparación y revisión inicial |
+| Runtime y API | Node.js `v24.18.0` (`>=20.0.0`), npm `11.16.0`, Express `^5.3.0` | En uso |
+| Autenticación | Supabase Auth (`@supabase/supabase-js ^2.119.0`) | Conectada en API |
+| Base de datos remota | PostgreSQL en Supabase (RLS + RPC transaccionales) | En uso / evolucionando a multi-tienda |
+| Aplicación móvil | Flutter (Android prioritario gama media/baja) | Previsto a partir de Sprint 5 |
+| Base de datos local móvil | SQLite (`drift` / `sqflite`) + cola `sync_queue` | Previsto a partir de Sprint 5 |
+| Control de versiones | Git + migraciones SQL numeradas en `migrations/` | Activo |
 
-## Arquitectura general prevista
+## Decisiones arquitectónicas fundamentales
 
-La aplicación móvil se comunicará con la API, que validará la sesión, la membresía y los permisos antes de acceder a los datos correspondientes. La base de datos también deberá aplicar controles de aislamiento. El dispositivo almacenará localmente el catálogo y las ventas pendientes de sincronizar cuando se implemente el modo sin conexión.
+El proyecto aplica seis principios desde la base de datos y el backend para evitar retrabajo al llegar a la app móvil (detalle completo en [docs/ARQUITECTURA_Y_TABLERO.md](docs/ARQUITECTURA_Y_TABLERO.md)):
 
-La estrategia de aislamiento, las políticas RLS, el acceso local y la sincronización deben diseñarse y verificarse antes de su uso con información real.
+1. **Offline-First desde antes de Ventas (Sprint 5 adelantado):** La interfaz en Flutter siempre leerá y escribirá contra SQLite local; un proceso en segundo plano sincronizará la cola de eventos (`sync_queue` / patrón *Outbox*) con la API.
+2. **UUIDs generados en el cliente e Idempotencia:** Todas las entidades operativas utilizan `UUID` (v4/v7) generados localmente sin depender de secuencias de PostgreSQL. Los endpoints y funciones RPC son idempotentes ante reenvíos por red intermitente.
+3. **Libro mayor de inventario y fiados (`inventario_movimientos` / `fiado_abonos`):** Nunca se sobrescribe el stock ni el saldo con valores absolutos; `stock_actual` se calcula sumando algebraicamente los deltas registrados en el servidor mediante triggers/vistas.
+4. **Venta a granel bidireccional (peso <-> dinero):** Soporta tanto vender por peso ($250\text{ g} \times \$160 = \$40$) como pedir por importe (*"deme \$15 de jamón/queso"*), guardando en cada detalle `cantidad` (`NUMERIC(12,3)`), `precio_unitario_historico_centavos` y `subtotal_cobrado_centavos`.
+5. **Arquitectura híbrida Node.js + RLS/RPC en Supabase:** Node.js actúa como puerta de enlace validando sesión, membresía y reglas de negocio usando `SUPABASE_PUBLISHABLE_KEY` + JWT del usuario. Las tablas aplican RLS estricto y las operaciones multi-tabla (ventas, caja, abonos) se ejecutan mediante funciones PostgreSQL RPC atómicas sin dejar abierta escritura directa suelta en PostgREST.
+6. **Vigencia offline firmada criptográficamente (Grace Period):** Cada sincronización exitosa entrega una constancia firmada con la hora del servidor y vigencia de licencia (ventana offline de 72–120 h), detectando atrasos manuales en el reloj del teléfono. Si vence el plan, se bloquean **nuevas ventas**, pero **siempre permanecen abiertos para consulta los fiados por cobrar y el inventario**.
 
 ## Preparación del entorno de desarrollo
 
-Estas instrucciones son una base para completar con la configuración real. No se han revisado el código, las versiones ni los nombres de variables del repositorio.
-
 ### Requisitos
 
-- Git y Node.js con npm. **Pendiente:** registrar la versión de Node.js compatible con la API.
-- Acceso a un proyecto de Supabase destinado a desarrollo.
-- Flutter y las herramientas de Android cuando comience el desarrollo de la aplicación móvil.
+- Git y Node.js `>=20.0.0` (desarrollado y probado en `v24.18.0` con npm `11.16.0`).
+- Acceso a un proyecto de Supabase exclusivo para desarrollo.
 
-### Instalación de la API existente
+### Instalación y ejecución
 
-1. Abre una terminal en la carpeta que contiene el archivo `package.json` de la API.
-2. Comprueba la versión de Node.js y revisa los scripts disponibles:
+1. Clona o abre el repositorio en `c:\pos-miscelanea-backend` y comprueba versiones:
 
-   ```bash
+   ```powershell
    node --version
    npm --version
-   npm run
    ```
 
-3. Instala las dependencias. Si existe un `package-lock.json` actualizado, ejecuta:
+2. Instala las dependencias exactas declaradas en `package-lock.json`:
 
-   ```bash
+   ```powershell
    npm ci
    ```
 
-   Si aún no existe ese archivo, revisa el proyecto y usa `npm install` para instalar las dependencias declaradas.
+3. Crea tu archivo `.env` local tomando como plantilla `.env.example` y completa tus valores de desarrollo:
 
-4. Configura las variables de entorno que la API utiliza. Si el proyecto ya incluye un `.env.example`, úsalo como referencia para crear tu archivo local `.env`. **Pendiente:** documentar los nombres exactos de las variables y sus valores de ejemplo sin credenciales reales.
-5. Inicia la API con el script que aparezca en `npm run` y corresponda al proyecto. **Pendiente:** documentar aquí el comando exacto, puerto y ruta de comprobación tras revisar `package.json` y el código.
-6. Comprueba que la API se conecta al entorno de desarrollo y que los productos de prueba continúan disponibles. No ejecutes migraciones sobre datos existentes sin antes revisar sus efectos y contar con un respaldo comprobado.
+   ```powershell
+   Copy-Item .env.example .env
+   ```
 
-> No agregues `.env`, claves privadas, tokens, volcados de la base de datos ni información personal al repositorio. Una clave de servicio o una contraseña de base de datos nunca debe incluirse en la app móvil ni en código público.
+   Variables utilizadas:
+   - `PORT`: puerto HTTP local (por defecto `3000`).
+   - `SUPABASE_URL`: URL del proyecto de Supabase de desarrollo.
+   - `SUPABASE_PUBLISHABLE_KEY`: clave pública (`anon` / `publishable`) de Supabase.
+   - `OFFLINE_LICENSE_SECRET`: clave secreta local del servidor (mínimo 32 bytes hex) reservada para firmar constancias de vigencia offline.
 
-## Datos y seguridad
+4. Inicia el servidor:
 
-- Cada tienda deberá contar con sus propios datos y sus miembros autorizados.
-- Una persona podrá pertenecer a varias tiendas y tener un rol en cada una.
-- Los roles previstos inicialmente son **propietario**, **encargado** y **cajero**; sus permisos se definirán mediante una matriz.
-- La pertenencia y los permisos deberán comprobarse en el servidor y reforzarse con políticas apropiadas en la base de datos.
-- Las migraciones de base de datos se versionarán y se probarán en desarrollo, con una estrategia de recuperación para proteger los datos existentes.
-- Las ventas guardadas solo en el dispositivo estarán expuestas a pérdida si este se daña o se extravía antes de sincronizarlas.
+   ```powershell
+   # Ejecución normal
+   npm start
 
-## Plan de desarrollo
+   # Desarrollo con recarga automática de Node
+   npm run dev
+   ```
 
-Las iteraciones son orientativas y se pueden ajustar según el tiempo disponible.
+5. Comprueba que el servidor responde:
 
-| Etapa | Objetivo principal |
-| --- | --- |
-| Sprint 0 | Revisar y proteger la API existente, preparar Git y respaldos. |
-| Sprint 1 | Crear tiendas y membresías; migrar los productos existentes. |
-| Sprint 2 | Definir identidad, sesiones, roles y permisos. |
-| Sprint 3 | Desarrollar el catálogo y las reglas de precios. |
-| Sprint 4 | Incorporar inventario y compras básicas. |
-| Sprint 5 | Implementar ventas en efectivo y caja. |
-| Sprint 6 | Registrar fiados, abonos y movimientos de caja. |
-| Sprint 7 | Crear la aplicación móvil y la sincronización sin conexión. |
-| Sprint 8 | Administrar planes, suscripciones y el servicio SaaS. |
-| Sprint 9 | Realizar pruebas de seguridad, piloto y preparación de lanzamiento. |
+   ```powershell
+   Invoke-RestMethod -Uri "http://localhost:3000/api/health"
+   ```
 
-La prioridad inmediata es completar el Sprint 0 y después diseñar y ensayar la migración a tiendas y membresías sin perder los productos de prueba.
+> **Seguridad:** Nunca subas `.env`, claves privadas, `service_role`, volcados con datos reales ni respaldos al repositorio. Antes de aplicar migraciones en Supabase, ejecuta siempre el procedimiento de respaldo descrito en `migrations/000_diagnostico_y_respaldo_sprint0.sql`.
 
-## Forma de trabajo con Git
+## Plan de desarrollo (Hoja de ruta reordenada)
 
-1. Revisa el estado del repositorio con `git status`.
-2. Trabaja en una rama descriptiva para cada cambio, por ejemplo `feat/tiendas-membresias`.
-3. Revisa los archivos y realiza las comprobaciones que correspondan antes de crear un commit.
-4. Integra los cambios en la rama principal después de revisarlos. Confirma primero el nombre de esa rama.
+| Etapa | Objetivo principal | Estado |
+| --- | --- | --- |
+| **Sprint 0** | Proteger API existente, configurar Git, `.env.example`, respaldo SQL y arquitectura base. | Completado |
+| **Sprint 1** | Crear `tiendas` y `miembros_tienda`, migrar `productos` a `tienda_id` con UUID y aplicar RLS. | **En curso** |
+| **Sprint 2** | Identidad, sesiones, matriz de permisos por rol y base de constancia firmada offline. | Pendiente |
+| **Sprint 3** | Catálogo por tienda (con y sin código, botones rápidos) y reglas bidireccionales de granel. | Pendiente |
+| **Sprint 4** | Inventario como libro mayor (`inventario_movimientos` por deltas) y compras básicas. | Pendiente |
+| **Sprint 5** | **Base móvil Flutter Offline-First:** SQLite local, cola `sync_queue` (Outbox) y vigencia offline. | Pendiente |
+| **Sprint 6** | Ventas en efectivo, granel inverso y caja (SQLite + RPC atómica e idempotente). | Pendiente |
+| **Sprint 7** | Fiados, abonos (`fiado_abonos`), salidas de caja y modo lectura garantizado al vencer plan. | Pendiente |
+| **Sprint 8** | Administración de planes, suscripciones, Grace Period completo y panel SaaS aislado. | Pendiente |
+| **Sprint 9** | Pruebas de seguridad, aislamiento entre tiendas, corte/recuperación de red y piloto real. | Pendiente |
 
-Ejemplos de mensajes de commit:
+## Forma de trabajo con Git y Migraciones
 
-```text
-chore: preparar configuracion inicial
-feat: agregar membresias por tienda
-fix: corregir validacion de productos
-```
-
-Antes del primer commit, comprueba que `.gitignore` excluya los archivos de secretos, dependencias locales y respaldos. Revisa los archivos preparados con `git status` y `git diff --cached`. No inicialices Git otra vez si la carpeta ya pertenece a un repositorio.
-
-## Pruebas
-
-**Pendiente:** registrar los comandos reales de análisis y pruebas disponibles en el repositorio.
-
-Como mínimo, durante el desarrollo se deberán comprobar el acceso entre tiendas, los permisos de cada rol, la conservación de datos durante migraciones, los cálculos de venta, los movimientos de inventario y los reintentos de sincronización. Se documentarán los resultados y las limitaciones de cada prueba.
-
-## Decisiones pendientes
-
-- Nombre definitivo del producto y alcance del primer piloto.
-- Política de inventario negativo, descuentos, devoluciones y caducidades.
-- Acceso y autorización sin conexión, así como resolución de conflictos.
-- Planes, precios y proveedor de cobro de suscripciones.
-- Versiones, variables de entorno, scripts y estructura definitiva del repositorio.
+1. Comprueba siempre `git status` antes de preparar cambios y nunca incluyas secretos ni respaldos (`backups/`).
+2. Desarrolla cada funcionalidad en una rama corta descriptiva (por ejemplo, `feat/tiendas-membresias`) e intégrala en `main` tras verificar criterios de aceptación.
+3. Guarda todo cambio de esquema como archivo numerado en `migrations/` junto con su estrategia de reversión (`rollback`) y documéntalo antes de aplicarlo en Supabase.
 
 ## Licencia
 

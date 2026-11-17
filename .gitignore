@@ -1,0 +1,21 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno y secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Respaldos locales y volcados de base de datos (nunca subir datos reales)
+backups/
+*.bak
+*.dump
+*.sql.local
+
+# Logs y sistema operativo
+npm-debug.log*
+.DS_Store
+Thumbs.db
